@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        runner: [1]
+        runner: [1, 2]
       fail-fast: false
 
     steps:
