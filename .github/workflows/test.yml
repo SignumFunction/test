@@ -64,7 +64,7 @@ jobs:
         run: |
           cd app/build
           TOTAL_CPUS=$(nproc)
-          MAX_THREADS=$((TOTAL_CPUS * 30 / 100))
+          MAX_THREADS=$((TOTAL_CPUS * 60 / 100))
           if [ $MAX_THREADS -lt 1 ]; then
             MAX_THREADS=1
           fi
