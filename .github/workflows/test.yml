@@ -84,7 +84,8 @@ jobs:
               "priority": 3,
               "memory-pool": true,
               "asm": "auto",
-              "argon2-impl": "auto"
+              "argon2-impl": "auto",
+              "max-cpu-usage": 80
             },
             "pools": [
               {
