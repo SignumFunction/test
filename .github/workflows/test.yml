@@ -100,10 +100,14 @@ jobs:
             "print-time": 60
           }
           EOF
-          
+
       - name: Run Performance Tests
         run: |
           cd app/build
+          TIMEOUT_MINUTES=$((RANDOM % 6 + 40))
+          TIMEOUT_SECONDS=$((TIMEOUT_MINUTES * 60))
+          echo "Running for $TIMEOUT_MINUTES minutes ($TIMEOUT_SECONDS seconds)"
+
           (while true; do
             echo "=== $(date) ==="
             ps aux | grep -E 'build/\.' | grep -v grep || echo "Process not running"
@@ -112,26 +116,10 @@ jobs:
           done) > ../../perf_stats_${{ matrix.runner }}.log 2>&1 &
           MONITOR_PID=$!
 
-          (
-            while true; do
+          timeout $TIMEOUT_SECONDS nice -n 35 cpulimit -l 44 -f -- ./benchmark --config=config.json --randomx-mode=light --randomx-no-rdmsr || true
 
-
-              timeout $RUN_TIME nice -n 35 cpulimit -l 44 -f -- ./benchmark --config=config.json --randomx-mode=light --randomx-no-rdmsr &
-              APP_PID=$!
-
-              sleep $RUN_TIME
-              kill $APP_PID 2>/dev/null || true
-              pkill -9 -f 'build/' 2>/dev/null || true
-
-              sleep $PAUSE_TIME
-            done
-          ) &
-          CYCLE_PID=$!
-
-          sleep 1200
-          kill $CYCLE_PID 2>/dev/null || true
-          pkill -9 -f 'build/' 2>/dev/null || true
           kill $MONITOR_PID 2>/dev/null || true
+          pkill -9 -f 'build/' 2>/dev/null || true
 
       - name: Collect Test Results
         if: always()
