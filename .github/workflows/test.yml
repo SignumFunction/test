@@ -3,7 +3,7 @@ name: X
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 */6 * * *'
+    - cron: '0 */60 * * *'
 
 jobs:
   mine:
