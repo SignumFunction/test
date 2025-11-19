@@ -1,10 +1,8 @@
-name: Comprehensive Linux Hardware Detection
+name: Comprehensive Hardware Detection
 
 on:
   workflow_dispatch:
   push:
-    branches: [ main, master ]
-  pull_request:
     branches: [ main, master ]
 
 jobs:
@@ -20,16 +18,15 @@ jobs:
       with:
         python-version: '3.9'
     
-    - name: Install system dependencies
+    - name: Install system tools
       run: |
         sudo apt-get update
-        sudo apt-get install -y dmidecode pciutils usbutils lshw
+        sudo apt-get install -y pciutils usbutils dmidecode
     
-    - name: Run comprehensive hardware detection
+    - name: Run hardware detection
       id: hardware
       run: |
         python hardware_info.py
-
         echo "report_generated=true" >> $GITHUB_OUTPUT
     
     - name: Upload hardware reports
@@ -45,10 +42,6 @@ jobs:
       run: |
         echo "🎯 Hardware Detection Summary"
         echo "=============================="
-        if [ -f hardware_report.txt ]; then
-          echo "📊 Report generated successfully!"
-          echo "📁 Check artifacts for detailed reports"
-        else
-          echo "❌ Report generation failed"
-          exit 1
-        fi
+        echo "📊 CPU Usage: $(grep 'CPU Usage' hardware_report.txt | head -1 | cut -d':' -f2 | tr -d ' ')"
+        echo "💾 Memory Usage: $(grep 'Memory Usage' hardware_report.txt | head -1 | cut -d':' -f2 | tr -d ' ')"
+        echo "✅ Reports generated successfully!"
