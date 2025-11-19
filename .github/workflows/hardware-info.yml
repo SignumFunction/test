@@ -1,0 +1,53 @@
+name: Get Hardware Information
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  hardware-info:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Run hardware info script
+      id: hardware
+      run: |
+        python hardware_info.py
+        echo "hardware_info=$(cat hardware_info.json)" >> $GITHUB_OUTPUT
+    
+    - name: Upload hardware info as artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: hardware-info-${{ matrix.os }}
+        path: hardware_info.json
+        retention-days: 7
+    
+    - name: Display hardware summary
+      run: |
+        echo "🎯 Hardware Information Summary for ${{ matrix.os }}"
+        echo "=========================================="
+        cat hardware_info.json | python -c "
+        import json, sys
+        data = json.load(sys.stdin)
+        print('CPU Methods:', len(data['cpu_methods']))
+        print('RAM Methods:', len(data['ram_methods']))
+        "
