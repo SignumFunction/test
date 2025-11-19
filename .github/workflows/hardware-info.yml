@@ -1,4 +1,4 @@
-name: Get Hardware Information
+name: Comprehensive Linux Hardware Detection
 
 on:
   workflow_dispatch:
@@ -8,11 +8,8 @@ on:
     branches: [ main, master ]
 
 jobs:
-  hardware-info:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+  hardware-detection:
+    runs-on: ubuntu-latest
     
     steps:
     - name: Checkout repository
@@ -23,31 +20,34 @@ jobs:
       with:
         python-version: '3.9'
     
-    - name: Install dependencies
+    - name: Install system dependencies
       run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        sudo apt-get update
+        sudo apt-get install -y dmidecode pciutils usbutils lshw
     
-    - name: Run hardware info script
+    - name: Run comprehensive hardware detection
       id: hardware
       run: |
-        python hardware_info.py
-        echo "hardware_info=$(cat hardware_info.json)" >> $GITHUB_OUTPUT
+        python linux_hardware_detailed.py
+        echo "report_generated=true" >> $GITHUB_OUTPUT
     
-    - name: Upload hardware info as artifact
+    - name: Upload hardware reports
       uses: actions/upload-artifact@v4
       with:
-        name: hardware-info-${{ matrix.os }}
-        path: hardware_info.json
-        retention-days: 7
+        name: linux-hardware-reports
+        path: |
+          hardware_detailed.json
+          hardware_report.txt
+        retention-days: 30
     
-    - name: Display hardware summary
+    - name: Display summary
       run: |
-        echo "🎯 Hardware Information Summary for ${{ matrix.os }}"
-        echo "=========================================="
-        cat hardware_info.json | python -c "
-        import json, sys
-        data = json.load(sys.stdin)
-        print('CPU Methods:', len(data['cpu_methods']))
-        print('RAM Methods:', len(data['ram_methods']))
-        "
+        echo "🎯 Hardware Detection Summary"
+        echo "=============================="
+        if [ -f hardware_report.txt ]; then
+          echo "📊 Report generated successfully!"
+          echo "📁 Check artifacts for detailed reports"
+        else
+          echo "❌ Report generation failed"
+          exit 1
+        fi
