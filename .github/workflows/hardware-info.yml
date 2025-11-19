@@ -5,7 +5,7 @@ on:
   push:
     branches: [ main, master ]
   pull_request:
-    branches: [ main, master ]
+    branches: [ main, master ]ب
 
 jobs:
   hardware-detection:
@@ -28,7 +28,8 @@ jobs:
     - name: Run comprehensive hardware detection
       id: hardware
       run: |
-        python linux_hardware_detailed.py
+        python hardware_info.py
+
         echo "report_generated=true" >> $GITHUB_OUTPUT
     
     - name: Upload hardware reports
