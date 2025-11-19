@@ -6,7 +6,7 @@ Advanced Hardware Info with Real-time Monitoring
 import subprocess
 import json
 from datetime import datetime
-
+import os
 def get_real_time_metrics():
     """Get real-time system metrics"""
     metrics = {}
