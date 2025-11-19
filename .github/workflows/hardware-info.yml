@@ -5,7 +5,7 @@ on:
   push:
     branches: [ main, master ]
   pull_request:
-    branches: [ main, master ]ب
+    branches: [ main, master ]
 
 jobs:
   hardware-detection:
